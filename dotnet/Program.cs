@@ -2,7 +2,8 @@
 using System.Text.Json;
 
 // using FileStream fs = File.Open("../resources/pi-billion.txt", FileMode.Open, FileAccess.Read, FileShare.Read);
-using FileStream fs = File.Open("C:/Users/TeamD/Downloads/pi-billion.txt", FileMode.Open, FileAccess.Read, FileShare.Read);
+// using FileStream fs = File.Open("C:/Users/TeamD/Downloads/pi-billion.txt", FileMode.Open, FileAccess.Read, FileShare.Read);
+using FileStream fs = File.Open(args[0], FileMode.Open, FileAccess.Read, FileShare.Read);
 using BufferedStream bs = new BufferedStream(fs);
 using StreamReader sr = new StreamReader(bs);
 
