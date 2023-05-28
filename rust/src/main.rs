@@ -1,6 +1,8 @@
-use std::fs::File;
-use std::time::Instant;
 use memmap::MmapOptions;
+use rayon::prelude::*;
+use std::fs::File;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -10,62 +12,49 @@ fn main() -> std::io::Result<()> {
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     // The buffer size determines the size of the chunks.
-    let buffer_size = 10 * 1024 * 1024;  // 10 MB
-    let mut buffer = vec![0; buffer_size];
+    let buffer_size = 10 * 1024 * 1024; // 10 MB
+    let sequence_counts = Arc::new(Mutex::new(vec![0; 200_000_000]));
 
-    let mut sequence = String::new();
-    let mut sequence_counts = vec![0; 200_000_000];
+    let num_chunks = (mmap.len() + buffer_size - 1) / buffer_size;
 
-    let mut i = 0;
-    while i < mmap.len() {
-        // Read into the buffer.
-        let end = std::cmp::min(i + buffer_size, mmap.len());
-        buffer[..end-i].copy_from_slice(&mmap[i..end]);
+    // Process each chunk in parallel
+    (0..num_chunks)
+        .into_par_iter()
+        .map(|chunk_index| {
+            let start = chunk_index * buffer_size;
+            let end = std::cmp::min((chunk_index + 1) * buffer_size + 7, mmap.len());
+            start..end
+        })
+        .for_each(|range| {
+            let chunk = &mmap[range];
+            let mut local_sequence_counts = vec![0; 200_000_000];
 
-        // Append any remaining characters from the previous chunk to ensure we don't split sequences.
-        if !sequence.is_empty() {
-            let remaining = 8 - sequence.len();
-            for &byte in &buffer[0..remaining] {
-                sequence.push(byte as char);
-            }
-            // Check if sequence is a valid date and update count
-            if is_valid_date(&sequence) {
-                let sequence_number = sequence.parse::<usize>().unwrap();
-                if sequence_number >= 1900_0000 && sequence_number < 2100_0000 {
-                    let index = sequence_number - 1900_0000;
-                    sequence_counts[index] += 1;
-                }
-            }
-            
-            sequence.clear();
-        }
-
-        for &byte in &buffer[..end-i] {
-            let char = byte as char;
-            sequence.push(char);
-            if sequence.len() == 8 {
-                // Check if sequence is a valid date and update count
-                if is_valid_date(&sequence) {
-                    let sequence_number = sequence.parse::<usize>().unwrap();
-                    if sequence_number >= 1900_0000 && sequence_number < 2100_0000 {
-                        let index = sequence_number - 1900_0000;
-                        sequence_counts[index] += 1;
+            chunk
+                .windows(8)
+                // convert to u8 since we know it's just ascii numbers
+                .map(|bytes| {
+                    let mut number = 0;
+                    for &byte in bytes {
+                        number = number * 10 + (byte - b'0') as usize;
                     }
-                }
-                
-                sequence.drain(..1);
+                    number
+                })
+                .filter(|date| (1900_00_00..2100_00_00).contains(date))
+                .for_each(|date| {
+                    let index = date - 1900_0000;
+                    local_sequence_counts[index as usize] += 1;
+                });
+
+            // Merge the local counts into the global counts
+            let mut global_counts = sequence_counts.lock().unwrap();
+            for i in 0..200_000_000 {
+                global_counts[i] += local_sequence_counts[i];
             }
-        }
-        i += buffer_size;
-    }
+        });
 
     let duration = start.elapsed();
     println!("Finished in {} ms", duration.as_millis());
+    let count = sequence_counts.lock().unwrap().iter().sum::<usize>();
+    println!("Found {} dates", count);
     Ok(())
-}
-
-fn is_valid_date(sequence: &str) -> bool {
-    // Here you'd implement the date validation logic.
-    // This is a placeholder implementation that always returns true.
-    !sequence.contains(".") && sequence.len() == 8
 }
