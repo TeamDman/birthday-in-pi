@@ -1,10 +1,8 @@
-use rayon::prelude::*;
-use std::collections::HashMap;
-use std::{fs::File, io::Result, sync::Mutex, time::Instant};
+use std::fs::File;
+use std::time::Instant;
 use memmap::MmapOptions;
-use std::sync::Arc;
 
-fn main() -> Result<()> {
+fn main() -> std::io::Result<()> {
     let start = Instant::now();
 
     // Use memory mapping to create a view into the file.
@@ -13,34 +11,53 @@ fn main() -> Result<()> {
 
     // The buffer size determines the size of the chunks.
     let buffer_size = 10 * 1024 * 1024;  // 10 MB
+    let mut buffer = vec![0; buffer_size];
 
-    // Make the sequence_counts HashMap shared and protected by a mutex.
-    let sequence_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+    let mut sequence = String::new();
+    let mut sequence_counts = vec![0; 200_000_000];
 
-    let num_chunks = mmap.len() / buffer_size;
+    let mut i = 0;
+    while i < mmap.len() {
+        // Read into the buffer.
+        let end = std::cmp::min(i + buffer_size, mmap.len());
+        buffer[..end-i].copy_from_slice(&mmap[i..end]);
 
-    // Create a range of chunks, then use rayon to iterate over the range in parallel.
-    (0..num_chunks).into_par_iter().for_each(|chunk_idx| {
-        let start = chunk_idx * buffer_size;
-        let end = std::cmp::min(start + buffer_size, mmap.len());
+        // Append any remaining characters from the previous chunk to ensure we don't split sequences.
+        if !sequence.is_empty() {
+            let remaining = 8 - sequence.len();
+            for &byte in &buffer[0..remaining] {
+                sequence.push(byte as char);
+            }
+            // Check if sequence is a valid date and update count
+            if is_valid_date(&sequence) {
+                let sequence_number = sequence.parse::<usize>().unwrap();
+                if sequence_number >= 1900_0000 && sequence_number < 2100_0000 {
+                    let index = sequence_number - 1900_0000;
+                    sequence_counts[index] += 1;
+                }
+            }
+            
+            sequence.clear();
+        }
 
-        // Each thread gets its own sequence and buffer.
-        let mut sequence = String::new();
-        let buffer = &mmap[start..end];
-
-        for &byte in buffer {
+        for &byte in &buffer[..end-i] {
             let char = byte as char;
             sequence.push(char);
             if sequence.len() == 8 {
                 // Check if sequence is a valid date and update count
                 if is_valid_date(&sequence) {
-                    let mut sequence_counts = sequence_counts.lock().unwrap();
-                    *sequence_counts.entry(sequence.clone()).or_insert(0) += 1;
+                    let sequence_number = sequence.parse::<usize>().unwrap();
+                    if sequence_number >= 1900_0000 && sequence_number < 2100_0000 {
+                        let index = sequence_number - 1900_0000;
+                        sequence_counts[index] += 1;
+                    }
                 }
+                
                 sequence.drain(..1);
             }
         }
-    });
+        i += buffer_size;
+    }
 
     let duration = start.elapsed();
     println!("Finished in {} ms", duration.as_millis());
@@ -48,8 +65,7 @@ fn main() -> Result<()> {
 }
 
 fn is_valid_date(sequence: &str) -> bool {
-    // TODO: Implement proper date validation. This function currently only checks if the sequence does not contain a dot
-    // and is 8 characters long.
+    // Here you'd implement the date validation logic.
+    // This is a placeholder implementation that always returns true.
     !sequence.contains(".") && sequence.len() == 8
 }
-
