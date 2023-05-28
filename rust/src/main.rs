@@ -1,44 +1,55 @@
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::{fs::File, io::Result, sync::Mutex, time::Instant};
 use memmap::MmapOptions;
-use std::fs::File;
-use std::time::Instant;
+use std::sync::Arc;
 
-fn is_valid_date(date: usize) -> bool {
-    let year = date / 10000;
-    let month = (date % 10000) / 100;
-    let day = date % 100;
-
-    year >= 1900 && year < 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31
-}
-
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
     let start = Instant::now();
 
-    // let file = File::open("../resources/pi-billion.txt")?;
-    let file = File::open("../resources/pi_dec_1m.txt")?;
-    let map = unsafe { MmapOptions::new().map(&file)? };
+    // Use memory mapping to create a view into the file.
+    let file = File::open("../resources/pi-billion.txt")?;
+    let mmap = unsafe { MmapOptions::new().map(&file)? };
 
-    let mut sequence_counts = vec![0; 1_000_000_000]; // Adjust size to accommodate all 8-digit numbers
-    let mut sequence: Vec<u8> = map[2..10].to_vec();
-    for byte in sequence.iter_mut() {
-        *byte -= b'0';
-    }
+    // The buffer size determines the size of the chunks.
+    let buffer_size = 10 * 1024 * 1024;  // 10 MB
 
-    for &byte in map.iter().skip(10) {
-        sequence.push(byte - b'0');
-        let date = sequence.iter().fold(0, |acc, &digit| acc * 10 + (digit as usize));
-        sequence.remove(0);
-        sequence_counts[date] += 1;
-    }
+    // Make the sequence_counts HashMap shared and protected by a mutex.
+    let sequence_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    sequence_counts = sequence_counts.into_iter().enumerate()
-        .filter(|&(date, _)| is_valid_date(date + 1_900_0000))
-        .map(|(_, count)| count)
-        .collect();
+    let num_chunks = mmap.len() / buffer_size;
 
-    let total_unique_dates = sequence_counts.into_iter().filter(|&count| count > 0).count();
+    // Create a range of chunks, then use rayon to iterate over the range in parallel.
+    (0..num_chunks).into_par_iter().for_each(|chunk_idx| {
+        let start = chunk_idx * buffer_size;
+        let end = std::cmp::min(start + buffer_size, mmap.len());
+
+        // Each thread gets its own sequence and buffer.
+        let mut sequence = String::new();
+        let buffer = &mmap[start..end];
+
+        for &byte in buffer {
+            let char = byte as char;
+            sequence.push(char);
+            if sequence.len() == 8 {
+                // Check if sequence is a valid date and update count
+                if is_valid_date(&sequence) {
+                    let mut sequence_counts = sequence_counts.lock().unwrap();
+                    *sequence_counts.entry(sequence.clone()).or_insert(0) += 1;
+                }
+                sequence.drain(..1);
+            }
+        }
+    });
 
     let duration = start.elapsed();
-    println!("Counted {} unique dates, took {} ms", total_unique_dates, duration.as_millis());
-
+    println!("Finished in {} ms", duration.as_millis());
     Ok(())
 }
+
+fn is_valid_date(sequence: &str) -> bool {
+    // TODO: Implement proper date validation. This function currently only checks if the sequence does not contain a dot
+    // and is 8 characters long.
+    !sequence.contains(".") && sequence.len() == 8
+}
+
