@@ -1,6 +1,6 @@
+use memmap::MmapOptions;
 use std::fs::File;
 use std::time::Instant;
-use memmap::MmapOptions;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();

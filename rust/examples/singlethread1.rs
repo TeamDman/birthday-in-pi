@@ -1,6 +1,6 @@
+use memmap::MmapOptions;
 use std::fs::File;
 use std::time::Instant;
-use memmap::MmapOptions;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -10,17 +10,17 @@ fn main() -> std::io::Result<()> {
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     // The buffer size determines the size of the chunks.
-    let buffer_size = 10 * 1024 * 1024;  // 10 MB
+    let buffer_size = 10 * 1024 * 1024; // 10 MB
     let mut buffer = vec![0; buffer_size];
 
     let mut sequence = String::new();
     let mut sequence_counts = vec![0; 200_000_000];
-    
+
     let mut i = 0;
     while i < mmap.len() {
         // Read into the buffer.
         let end = std::cmp::min(i + buffer_size, mmap.len());
-        buffer[..end-i].copy_from_slice(&mmap[i..end]);
+        buffer[..end - i].copy_from_slice(&mmap[i..end]);
 
         // Append any remaining characters from the previous chunk to ensure we don't split sequences.
         if !sequence.is_empty() {
@@ -36,11 +36,11 @@ fn main() -> std::io::Result<()> {
                     sequence_counts[index] += 1;
                 }
             }
-            
+
             sequence.clear();
         }
 
-        for &byte in &buffer[..end-i] {
+        for &byte in &buffer[..end - i] {
             let char = byte as char;
             sequence.push(char);
             if sequence.len() == 8 {
@@ -52,7 +52,7 @@ fn main() -> std::io::Result<()> {
                         sequence_counts[index] += 1;
                     }
                 }
-                
+
                 sequence.drain(..1);
             }
         }

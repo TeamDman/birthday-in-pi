@@ -1,6 +1,6 @@
+use memmap::MmapOptions;
 use std::fs::File;
 use std::time::Instant;
-use memmap::MmapOptions;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -30,13 +30,17 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-
     // count the number of unique dates
     let unique_dates = sequence_counts.iter().filter(|&c| *c > 0).count();
     println!("Number of unique dates: {}", unique_dates);
 
     // find the date with the most occurrences, return a tuple of the date and the count
-    let max_count = sequence_counts.iter().enumerate().map(|(index, count)| (1900_0000 + index, count)).max_by_key(|&(_, count)| count).unwrap();
+    let max_count = sequence_counts
+        .iter()
+        .enumerate()
+        .map(|(index, count)| (1900_0000 + index, count))
+        .max_by_key(|&(_, count)| count)
+        .unwrap();
     println!("Max count: {}: {}", max_count.0, max_count.1);
 
     let duration = start.elapsed();

@@ -1,9 +1,9 @@
-use std::fs::File;
-use std::time::Instant;
 use memmap::MmapOptions;
 use rayon::prelude::*;
-use std::sync::Arc;
+use std::fs::File;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -12,12 +12,17 @@ fn main() -> std::io::Result<()> {
     let file = File::open("../resources/pi-billion.txt")?;
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
-    let sequence_counts = Arc::new((0..200_000_000).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>().into_boxed_slice());
+    let sequence_counts = Arc::new(
+        (0..200_000_000)
+            .map(|_| AtomicUsize::new(0))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
 
     // Choose a chunk size. This can be tuned for performance.
     let mb = 1024 * 1024;
     let chunk_size = 16 * mb;
-    let overlap = 7;  // size of sliding window minus one
+    let overlap = 7; // size of sliding window minus one
 
     // Calculate the number of chunks and create an iterator over them
     let num_chunks = (mmap.len() + chunk_size - 1) / chunk_size;
