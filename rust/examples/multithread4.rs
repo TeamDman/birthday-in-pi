@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     let sequence_counts = Arc::new(
-        (0..200_000_000)
+        (0..1_000_000_000)
             .map(|_| AtomicUsize::new(0))
             .collect::<Vec<_>>()
             .into_boxed_slice(),
@@ -49,25 +49,19 @@ fn main() -> std::io::Result<()> {
                 number -= (number / power_of_ten) * power_of_ten;
                 number = number * 10 + (byte - b'0') as usize;
             }
-
-            // Check if number is a valid date and update count
-            // This will catch the start of the loop where number starts at zero
-            if number >= 1900_0000 && number < 2100_0000 {
-                let index = number - 1900_0000;
-                sequence_counts[index].fetch_add(1, Ordering::Relaxed);
-            }
+            sequence_counts[number].fetch_add(1, Ordering::Relaxed);
         }
     });
 
     // count the number of unique dates
-    let unique_dates = sequence_counts
+    let unique_dates = sequence_counts[1900_00_00..2100_00_00]
         .iter()
-        .filter(|&count| count.load(Ordering::Relaxed) > 0)
+        .filter(|count| count.load(Ordering::Relaxed) > 0)
         .count();
     println!("Number of unique dates: {}", unique_dates);
 
     // find the date with the most occurrences, return a tuple of the date and the count
-    let max_count = sequence_counts
+    let max_count = sequence_counts[1900_00_00..2100_00_00]
         .iter()
         .enumerate()
         .map(|(index, count)| (1900_0000 + index, count.load(Ordering::Relaxed)))
@@ -92,15 +86,12 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    let duration = start.elapsed();
-    println!("Finished in {} ms", duration.as_millis());
-
     // Convert HashMap to JSON and write to a file
     let ordered: BTreeMap<_, _> = date_counts.into_iter().collect();
     let file = File::create("date_counts.json")?;
     to_writer_pretty(BufWriter::new(file), &ordered).expect("couldn't write json");
 
     let duration = start.elapsed();
-    println!("Finished overall in {} ms", duration.as_millis());
+    println!("Finished in {} ms", duration.as_millis());
     Ok(())
 }

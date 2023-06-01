@@ -1,15 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
-
-use chrono::NaiveDate;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use memmap::MmapOptions;
 use rayon::prelude::*;
-use serde_json::to_writer_pretty;
-use std::io::BufWriter;
 use std::time::Instant;
-
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -19,9 +13,9 @@ fn main() -> std::io::Result<()> {
     // let file = File::open("../resources/pi_dec_1m.txt")?;
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
-    let sequence_counts = Arc::new(
+    let date_presence = Arc::new(
         (0..200_000_000)
-            .map(|_| AtomicUsize::new(0))
+            .map(|_| AtomicBool::new(false))
             .collect::<Vec<_>>()
             .into_boxed_slice(),
     );
@@ -54,53 +48,19 @@ fn main() -> std::io::Result<()> {
             // This will catch the start of the loop where number starts at zero
             if number >= 1900_0000 && number < 2100_0000 {
                 let index = number - 1900_0000;
-                sequence_counts[index].fetch_add(1, Ordering::Relaxed);
+                date_presence[index].store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
     });
 
     // count the number of unique dates
-    let unique_dates = sequence_counts
+    let unique_dates = date_presence
         .iter()
-        .filter(|&count| count.load(Ordering::Relaxed) > 0)
+        .filter(|&found| found.load(std::sync::atomic::Ordering::Relaxed))
         .count();
     println!("Number of unique dates: {}", unique_dates);
 
-    // find the date with the most occurrences, return a tuple of the date and the count
-    let max_count = sequence_counts
-        .iter()
-        .enumerate()
-        .map(|(index, count)| (1900_0000 + index, count.load(Ordering::Relaxed)))
-        .max_by_key(|&(_, count)| count)
-        .unwrap();
-    println!("Max count: {}: {}", max_count.0, max_count.1);
-
-    // Create a HashMap to hold the dates and counts
-    let mut date_counts = HashMap::new();
-
-    // Convert sequence_counts into dates
-    for (index, count) in sequence_counts.iter().enumerate() {
-        let count = count.load(Ordering::Relaxed);
-        if count > 0 {
-            let sequence_number = 1900_0000 + index;
-            let year: i32 = (sequence_number / 10_000) as i32;
-            let month: u32 = ((sequence_number / 100) % 100) as u32;
-            let day: u32 = (sequence_number % 100) as u32;
-            if NaiveDate::from_ymd_opt(year, month, day).is_some() {
-                date_counts.insert(format!("{year:04}-{month:02}-{day:02}"), count);
-            }
-        }
-    }
-
     let duration = start.elapsed();
     println!("Finished in {} ms", duration.as_millis());
-
-    // Convert HashMap to JSON and write to a file
-    let ordered: BTreeMap<_, _> = date_counts.into_iter().collect();
-    let file = File::create("date_counts.json")?;
-    to_writer_pretty(BufWriter::new(file), &ordered).expect("couldn't write json");
-
-    let duration = start.elapsed();
-    println!("Finished overall in {} ms", duration.as_millis());
     Ok(())
 }
