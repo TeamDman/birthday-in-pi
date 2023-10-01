@@ -1,15 +1,13 @@
-use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
-
 use chrono::NaiveDate;
 use memmap::MmapOptions;
 use rayon::prelude::*;
 use serde_json::to_writer_pretty;
+use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
 use std::io::BufWriter;
-use std::time::Instant;
-
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{Ordering, AtomicU32};
+use std::time::Instant;
 
 fn main() -> std::io::Result<()> {
     let start = Instant::now();
@@ -21,7 +19,7 @@ fn main() -> std::io::Result<()> {
 
     let sequence_counts = Arc::new(
         (0..200_000_000)
-            .map(|_| AtomicUsize::new(0))
+            .map(|_| AtomicU32::new(0))
             .collect::<Vec<_>>()
             .into_boxed_slice(),
     );
